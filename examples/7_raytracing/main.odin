@@ -380,7 +380,7 @@ upload_bvh_instances :: proc(upload_arena: ^gpu.Arena, cmd_buf: gpu.Command_Buff
             mask = 1,
         }
     }
-    instances_local := gpu.mem_alloc(gpu.BVH_Instance, len(instances))
+    instances_local := gpu.mem_alloc(gpu.BVH_Instance, len(instances), mem_type = gpu.Memory.GPU)
     gpu.cmd_mem_copy(cmd_buf, instances_local, instances_staging, len(instances_staging.cpu))
     return instances_local
 }
