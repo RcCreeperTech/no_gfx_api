@@ -5,7 +5,7 @@ import "core:fmt"
 import vmem "core:mem/virtual"
 import "core:strings"
 import "base:runtime"
-import "core:os/os2"
+import "core:os"
 
 Shader_Type :: enum
 {
@@ -1064,7 +1064,7 @@ write_indentation :: proc()
 @(private="file")
 writer_output_to_file :: proc(path: string)
 {
-    err := os2.write_entire_file_from_string(path, strings.to_string(writer.builder))
+    err := os.write_entire_file_from_string(path, strings.to_string(writer.builder))
     ensure(err == nil)
 }
 

@@ -172,7 +172,7 @@ main :: (vert_id: uint @vert_id, data: ^Data @data) -> Output
 
 Importing **no_gfx** into your own project mostly just involves copying the `gpu/` directory, but to build this project you will need:
 
-- [Odin >= 2026-02](https://odin-lang.org/)
+- [Odin >= 2026-03](https://odin-lang.org/)
 - [Vulkan SDK](https://vulkan.lunarg.com/)
 - [make](https://www.gnu.org/software/make/)
 

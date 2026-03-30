@@ -73,8 +73,8 @@ main :: proc()
 
 load_file_and_null_terminate :: proc(path: string, allocator: runtime.Allocator) -> ([]u8, bool)
 {
-    file_content, ok := os.read_entire_file_from_filename(path)
-    if !ok do return {}, false
+    file_content, err := os.read_entire_file_from_path(path, allocator = context.allocator)
+    if err != nil do return {}, false
     defer delete(file_content)
 
     file_content_null_term := make([]u8, len(file_content) + 1, allocator = allocator)
