@@ -891,7 +891,7 @@ attribute_to_glsl :: proc(attribute: Ast_Attribute, ast: Ast, shader_type: Shade
             } else {
                 return "_res_compute_data_"
             }
-        case .Instance_ID:  return "gl_InstanceID"
+        case .Instance_ID:  return "gl_InstanceIndex"
         case .Draw_ID:       return "gl_DrawID"
         case .Indirect_Data: return "_res_indirect_data_._res_[gl_DrawID]"
         case .Workgroup_ID: return "gl_WorkGroupID"
