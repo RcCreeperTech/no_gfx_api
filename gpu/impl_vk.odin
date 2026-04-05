@@ -1326,7 +1326,10 @@ _mem_suballoc :: proc(addr: ptr, offset, el_size, el_count: i64, loc := #caller_
     // TODO: Add suballocation to a suballocation list in allocs.
     // This lets us do bounds checking on arena allocated pointers for example.
     suballoc_p := addr
-    ptr_apply_offset(&suballoc_p, offset)
+    if suballoc_p.cpu != nil {
+        suballoc_p.cpu = auto_cast(uintptr(suballoc_p.cpu) + uintptr(offset))
+    }
+    suballoc_p.gpu.ptr = auto_cast(uintptr(suballoc_p.gpu.ptr) + uintptr(offset))
     return suballoc_p
 }
 
@@ -2584,7 +2587,7 @@ _cmd_dispatch :: proc(cmd_buf: Command_Buffer, compute_data: gpuptr, num_groups_
     vk.CmdDispatch(vk_cmd_buf, num_groups_x, num_groups_y, num_groups_z)
 }
 
-_cmd_dispatch_indirect :: proc(cmd_buf: Command_Buffer, compute_data, arguments: gpuptr, loc := #caller_location)
+_cmd_dispatch_indirect_raw :: proc(cmd_buf: Command_Buffer, compute_data, arguments: gpuptr, loc := #caller_location)
 {
     if ctx.validation
     {
@@ -2814,8 +2817,8 @@ _cmd_draw_indexed_indirect_raw :: proc(cmd_buf: Command_Buffer, vertex_data, fra
     vk.CmdDrawIndexedIndirect(vk_cmd_buf, arguments_buf, vk.DeviceSize(arguments_offset), 1, 0)
 }
 
-_cmd_draw_indexed_instanced_indirect_multi_raw :: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
-                                                       indirect_arguments: gpuptr, stride: u32, draw_count: gpuptr, loc := #caller_location)
+_cmd_draw_indexed_indirect_multi_raw :: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
+                                             indirect_arguments: gpuptr, stride: u32, draw_count: gpuptr, loc := #caller_location)
 {
     if ctx.validation
     {
@@ -2849,7 +2852,7 @@ _cmd_draw_indexed_instanced_indirect_multi_raw :: proc(cmd_buf: Command_Buffer, 
 
     vk.CmdBindIndexBuffer(vk_cmd_buf, indices_buf, vk.DeviceSize(indices_offset), .UINT32)
 
-    max_draw_count: u32 = 0xFFFFFFFF
+    max_draw_count := max(u32)
     buf_size, ok_size := get_buf_size_from_gpu_ptr(indirect_arguments)
     if ok_size && buf_size > vk.DeviceSize(arguments_offset)
     {

@@ -365,7 +365,7 @@ cmd_set_scissor: proc(cmd_buf: Command_Buffer, scissor: Rect_2D, loc := #caller_
 cmd_dispatch: proc(cmd_buf: Command_Buffer, compute_data: gpuptr, num_groups_x: u32, num_groups_y: u32 = 1, num_groups_z: u32 = 1, loc := #caller_location) : _cmd_dispatch
 
 // Schedule indirect compute shader based on number of groups, arguments is a pointer to a Dispatch_Indirect_Command struct
-cmd_dispatch_indirect: proc(cmd_buf: Command_Buffer, compute_data, arguments: gpuptr, loc := #caller_location) : _cmd_dispatch_indirect
+cmd_dispatch_indirect_raw: proc(cmd_buf: Command_Buffer, compute_data, arguments: gpuptr, loc := #caller_location) : _cmd_dispatch_indirect_raw
 
 cmd_begin_render_pass: proc(cmd_buf: Command_Buffer, desc: Render_Pass_Desc, loc := #caller_location) : _cmd_begin_render_pass
 cmd_end_render_pass: proc(cmd_buf: Command_Buffer, loc := #caller_location) : _cmd_end_render_pass
@@ -376,7 +376,7 @@ cmd_draw_indexed_raw: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, 
 cmd_draw_indexed_indirect_raw: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices,
                                     indirect_arguments: gpuptr, loc := #caller_location) : _cmd_draw_indexed_indirect_raw
 cmd_draw_indexed_indirect_multi_raw: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
-                                          indirect_arguments: gpuptr, stride: u32, draw_count: gpuptr, loc := #caller_location) : _cmd_draw_indexed_instanced_indirect_multi_raw
+                                          indirect_arguments: gpuptr, stride: u32, draw_count: gpuptr, loc := #caller_location) : _cmd_draw_indexed_indirect_multi_raw
 
 cmd_build_blas: proc(cmd_buf: Command_Buffer, bvh: BVH, bvh_storage, scratch_storage: gpuptr, shapes: []BVH_Shape, loc := #caller_location) : _cmd_build_blas
 cmd_build_tlas: proc(cmd_buf: Command_Buffer, bvh: BVH, bvh_storage, scratch_storage: gpuptr, instances: gpuptr, loc := #caller_location) : _cmd_build_tlas
@@ -404,6 +404,14 @@ slice_len :: #force_inline proc(s: slice_t($T)) -> i64
     return i64(len(s.cpu))
 }
 
+slice_to_ptr :: #force_inline proc(s: slice_t($T)) -> ptr_t(T)
+{
+    return {
+        cpu = raw_data(s.cpu),
+        gpu = s.gpu,
+    }
+}
+
 // Type-safe variants of raw procedures
 cmd_draw_indexed :: #force_inline proc(cmd_buf: Command_Buffer, vertex_data, fragment_data: gpuptr, indices: slice_t(u32),
                                        instance_count: u32 = 1, loc := #caller_location)
@@ -411,27 +419,25 @@ cmd_draw_indexed :: #force_inline proc(cmd_buf: Command_Buffer, vertex_data, fra
     cmd_draw_indexed_raw(cmd_buf, vertex_data, fragment_data, indices, u32(slice_len(indices)), instance_count, loc)
 }
 
-cmd_draw_indexed_indirect :: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices,
-                                  indirect_arguments: gpuptr, loc := #caller_location)
+cmd_dispatch_indirect :: #force_inline proc(cmd_buf: Command_Buffer, compute_data: gpuptr,
+                                            arguments: ptr_t(Dispatch_Indirect_Command), loc := #caller_location)
+{
+    cmd_dispatch_indirect_raw(cmd_buf, compute_data, arguments, loc)
+}
+
+cmd_draw_indexed_indirect :: #force_inline proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
+                                                indirect_arguments: ptr_t($T), loc := #caller_location)
 {
     cmd_draw_indexed_indirect_raw(cmd_buf, vertex_data, fragment_data, indices, indirect_arguments, loc)
 }
 
-cmd_draw_indexed_indirect_multi :: proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
-                                        indirect_arguments: gpuptr, stride: u32, draw_count: gpuptr, loc := #caller_location)
+cmd_draw_indexed_indirect_multi :: #force_inline proc(cmd_buf: Command_Buffer, vertex_data, fragment_data, indices: gpuptr,
+                                                      indirect_arguments: slice_t($T), draw_count: ptr_t(u32), loc := #caller_location)
 {
-    cmd_draw_indexed_indirect_multi_raw(cmd_buf, vertex_data, fragment_data, indices, indirect_arguments, stride, draw_count, loc)
+    cmd_draw_indexed_indirect_multi_raw(cmd_buf, vertex_data, fragment_data, indices, indirect_arguments, size_of(T), draw_count, loc)
 }
 
 // Memory
-
-ptr_apply_offset :: #force_inline proc(addr: ^ptr, #any_int offset: i64)
-{
-    if addr.cpu != nil {
-        addr.cpu = auto_cast(uintptr(addr.cpu) + uintptr(offset))
-    }
-    addr.gpu.ptr = auto_cast(uintptr(addr.gpu.ptr) + uintptr(offset))
-}
 
 ptr_t :: struct($T: typeid)
 {
@@ -774,8 +780,8 @@ Descriptor_Pool :: struct
 }
 
 // Using null descriptors most likely will result in a crash
-// and driver reset. The user can define global resources to
-// be used instead (e.g. a magenta texture).
+// and driver reset. Thus it's useful to be able to define global
+// default resources to be used instead (e.g. a magenta texture).
 desc_pool_create :: proc(#any_int texture_count: i64 = 65535,
                          #any_int texture_rw_count: i64 = 256,
                          #any_int sampler_count: i64 = 256,

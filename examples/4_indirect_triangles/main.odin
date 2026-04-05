@@ -72,14 +72,14 @@ main :: proc()
     indices_local := gpu.mem_alloc(u32, 3, gpu.Memory.GPU)
 
     // Unified indirect data struct that extends Draw_Indexed_Indirect_Command
-    IndirectData :: struct {
+    Indirect_Data :: struct {
         using cmd: gpu.Draw_Indexed_Indirect_Command,
         color: [3]f32,
         pos: [3]f32,
         size: f32,
     }
 
-    indirect_data := gpu.mem_alloc(IndirectData, Num_Triangles)
+    indirect_data := gpu.mem_alloc(Indirect_Data, Num_Triangles)
     defer gpu.mem_free(indirect_data)
 
     count := gpu.arena_alloc(&arena, u32)
@@ -105,7 +105,7 @@ main :: proc()
         rgb := hsl_to_rgb(hue, saturation, lightness)
 
         // Fill unified indirect data struct with both command and user data
-        indirect_data.cpu[i] = IndirectData {
+        indirect_data.cpu[i] = Indirect_Data {
             cmd = gpu.Draw_Indexed_Indirect_Command {
                 index_count = 3,
                 instance_count = 1,
@@ -119,7 +119,7 @@ main :: proc()
         }
     }
 
-    indirect_data_local := gpu.mem_alloc(IndirectData, Num_Triangles, gpu.Memory.GPU)
+    indirect_data_local := gpu.mem_alloc(Indirect_Data, Num_Triangles, gpu.Memory.GPU)
 
     defer {
         gpu.mem_free(verts_local)
