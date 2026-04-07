@@ -239,7 +239,7 @@ main :: proc()
             num_groups_y := (u32(window_size_y) + group_size_y - 1) / group_size_y
             num_groups_z := u32(1)
 
-            gpu.cmd_dispatch(cmd_buf, compute_data.gpu, num_groups_x, num_groups_y, num_groups_z)
+            gpu.cmd_dispatch(cmd_buf, compute_data, num_groups_x, num_groups_y, num_groups_z)
 
             // Barrier to ensure compute shader finishes before rendering
             gpu.cmd_barrier(cmd_buf, .Compute, .Fragment_Shader, {})

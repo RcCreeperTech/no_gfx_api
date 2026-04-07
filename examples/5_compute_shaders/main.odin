@@ -200,9 +200,9 @@ main :: proc()
                 num_groups_z,
             }
 
-            gpu.cmd_dispatch_indirect(cmd_buf, compute_data.gpu, indirect_dispatch_command)
+            gpu.cmd_dispatch_indirect(cmd_buf, compute_data, indirect_dispatch_command)
         } else {
-            gpu.cmd_dispatch(cmd_buf, compute_data.gpu, num_groups_x, num_groups_y, num_groups_z)
+            gpu.cmd_dispatch(cmd_buf, compute_data, num_groups_x, num_groups_y, num_groups_z)
         }
 
         // Barrier to ensure compute shader finishes before rendering

@@ -452,8 +452,8 @@ render_pass_gbuffer :: proc(
 
 		gpu.cmd_draw_indexed(
 			cmd_buf,
-			verts_data.gpu,
-			frag_data.gpu,
+			verts_data,
+			frag_data,
 			mesh.indices,
 		)
 	}
