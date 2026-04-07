@@ -1,4 +1,6 @@
 
+#+vet !unused-imports
+
 package main
 
 import log "core:log"
@@ -222,14 +224,9 @@ load_texture :: proc(bytes: []byte, upload_arena: ^gpu.Arena, cmd_buf: gpu.Comma
         format = .RGBA8_Unorm,
         usage = { .Sampled },
     })
-    gpu.cmd_copy_to_texture(cmd_buf, texture, staging.gpu)
+    gpu.cmd_copy_to_texture(cmd_buf, texture, staging)
     return texture
 }
-
-// To get around the fact that I need to import "core:image/png" to load pngs,
-// but then -vet complains because it's not used.
-@(private="file")
-_fictitious :: proc() -> png.Error { return {} }
 
 changing_fade :: proc(delta_time: f32) -> f32
 {

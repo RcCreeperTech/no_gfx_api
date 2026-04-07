@@ -95,19 +95,26 @@ Rect_2D :: struct
     size: [2]u32,
 }
 
+Rect_3D :: struct
+{
+    offset: [3]i32,
+    size: [3]u32,
+}
+
+Texture_Region :: struct
+{
+    rect: Rect_3D,     // rect.size == 0 -> entire size
+    mip_level: u32,
+    base_layer: u32,
+    layer_count: u32,  // 0 = 1
+}
+
 Blit_Rect :: struct
 {
     offset_a: [3]i32,  // offset_a == 0 && offset_b == 0 -> full image
     offset_b: [3]i32,  // offset_a == 0 && offset_b == 0 -> full image
     mip_level: u32,
     base_layer: u32,
-    layer_count: u32,
-}
-
-Mip_Copy_Region :: struct {
-    src_offset:  u64, // Offset in staging buffer
-    mip_level:   u32,
-    array_layer: u32,
     layer_count: u32,
 }
 
@@ -342,8 +349,8 @@ commands_begin: proc(queue: Queue, loc := #caller_location) -> Command_Buffer : 
 
 // Commands
 cmd_mem_copy_raw: proc(cmd_buf: Command_Buffer, dst, src: gpuptr, #any_int bytes: i64, loc := #caller_location) : _cmd_mem_copy_raw
-cmd_copy_to_texture: proc(cmd_buf: Command_Buffer, dst: Texture, src: gpuptr, loc := #caller_location) : _cmd_copy_to_texture
-cmd_copy_mips_to_texture: proc(cmd_buf: Command_Buffer, texture: Texture, src_buffer: gpuptr, regions: []Mip_Copy_Region, loc := #caller_location) : _cmd_copy_mips_to_texture
+cmd_copy_to_texture: proc(cmd_buf: Command_Buffer, dst: Texture, src: gpuptr, region: Texture_Region, loc := #caller_location) : _cmd_copy_to_texture
+// TODO: Missing cmd_copy_from_texture
 cmd_blit_texture: proc(cmd_buf: Command_Buffer, src, dst: Texture, src_rects: []Blit_Rect, dst_rects: []Blit_Rect, filter: Filter, loc := #caller_location) : _cmd_blit_texture
 
 cmd_set_desc_heap: proc(cmd_buf: Command_Buffer, textures, textures_rw, samplers, bvhs: gpuptr, loc := #caller_location) : _cmd_set_desc_heap

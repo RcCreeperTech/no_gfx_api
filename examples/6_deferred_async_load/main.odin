@@ -788,8 +788,8 @@ upload_texture :: proc(
 			delete(compressed.offsets)
 		}
 
-		staging := gpu.arena_alloc_raw(upload_arena, len(compressed.data), 1, 16)
-		runtime.mem_copy(staging.cpu, raw_data(compressed.data), len(compressed.data))
+		staging := gpu.arena_alloc(upload_arena, u8, len(compressed.data))
+		copy(staging.cpu, compressed.data[:])
 
 		texture = gpu.texture_alloc_and_create(
 			{
@@ -805,23 +805,18 @@ upload_texture :: proc(
 		)
 		append(&loaded_textures, texture)
 
-		regions := make([]gpu.Mip_Copy_Region, int(compressed.mip_count))
-		for mip: u32 = 0; mip < compressed.mip_count; mip += 1 {
-			regions[mip] = {
-				src_offset = compressed.offsets[mip],
-				mip_level = mip,
-				array_layer = 0,
-				layer_count = 1,
-			}
-		}
-
 		upload_cmd_buf := gpu.commands_begin(.Transfer)
         gpu.cmd_barrier(upload_cmd_buf, .Transfer, .Transfer, {})
-		gpu.cmd_copy_mips_to_texture(upload_cmd_buf, texture, staging, regions)
+        for mip in 0..<compressed.mip_count {
+        	gpu.cmd_copy_to_texture(
+        		upload_cmd_buf,
+        		texture,
+        		gpu.subslice(staging, compressed.offsets[mip]),
+        		{ mip_level = mip }
+        	)
+        }
 		gpu.cmd_add_wait_semaphore(upload_cmd_buf, upload_sem, upload_sem_value_old + 1)
 		gpu.queue_submit(.Transfer, {upload_cmd_buf})
-
-		return texture
 	} else {
 		// Generate mipmaps
 		mipmaps_cmd_buf := gpu.commands_begin(.Main)
@@ -845,8 +840,8 @@ upload_bc3_texture :: proc(
 	upload_sem_val += 1
 
     upload_cmd_buf := gpu.commands_begin(.Transfer)
-    staging := gpu.arena_alloc_raw(upload_arena, len(compressed.data), 1, 16)
-    runtime.mem_copy(staging.cpu, raw_data(compressed.data), len(compressed.data))
+    staging := gpu.arena_alloc(upload_arena, u8, len(compressed.data))
+    copy(staging.cpu, compressed.data[:])
 
     texture := gpu.texture_alloc_and_create(
         {
@@ -860,17 +855,14 @@ upload_bc3_texture :: proc(
     )
     append(&loaded_textures, texture)
 
-    regions := make([]gpu.Mip_Copy_Region, int(compressed.mip_count))
-    for mip: u32 = 0; mip < compressed.mip_count; mip += 1 {
-        regions[mip] = {
-            src_offset = compressed.offsets[mip],
-            mip_level = mip,
-            array_layer = 0,
-            layer_count = 1,
-        }
+    for mip in 0..<compressed.mip_count {
+    	gpu.cmd_copy_to_texture(
+    		upload_cmd_buf,
+    		texture,
+    		gpu.subslice(staging, compressed.offsets[mip]),
+    		{ mip_level = mip }
+    	)
     }
-
-    gpu.cmd_copy_mips_to_texture(upload_cmd_buf, texture, staging, regions)
     gpu.cmd_barrier(upload_cmd_buf, .Transfer, .Transfer, {})
     gpu.cmd_add_signal_semaphore(upload_cmd_buf, upload_sem, upload_sem_value_old + 1)
     gpu.queue_submit(.Transfer, {upload_cmd_buf})
