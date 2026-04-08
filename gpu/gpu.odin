@@ -895,8 +895,8 @@ desc_pool_alloc_texture_multi :: proc(pool: ^Descriptor_Pool, textures: []Textur
 {
     assert(len(textures) <= int(max(u8)))
     idx := desc_pool_resource_alloc(&pool.texture_pool, i64(len(textures)))
-    for texture in textures {
-        desc_pool_resource_update(&pool.texture_pool, idx, texture)
+    for texture, i in textures {
+        desc_pool_resource_update(&pool.texture_pool, idx + u32(i), texture)
     }
     return idx
 }
@@ -905,8 +905,8 @@ desc_pool_alloc_texture_rw_multi :: proc(pool: ^Descriptor_Pool, textures_rw: []
 {
     assert(len(textures_rw) <= int(max(u8)))
     idx := desc_pool_resource_alloc(&pool.texture_rw_pool, i64(len(textures_rw)))
-    for texture_rw in textures_rw {
-        desc_pool_resource_update(&pool.texture_rw_pool, idx, texture_rw)
+    for texture_rw, i in textures_rw {
+        desc_pool_resource_update(&pool.texture_rw_pool, idx + u32(i), texture_rw)
     }
     return idx
 }
@@ -915,8 +915,8 @@ desc_pool_alloc_sampler_multi :: proc(pool: ^Descriptor_Pool, samplers: []Sample
 {
     assert(len(samplers) <= int(max(u8)))
     idx := desc_pool_resource_alloc(&pool.sampler_pool, i64(len(samplers)))
-    for sampler in samplers {
-        desc_pool_resource_update(&pool.sampler_pool, idx, sampler)
+    for sampler, i in samplers {
+        desc_pool_resource_update(&pool.sampler_pool, idx + u32(i), sampler)
     }
     return idx
 }
@@ -925,8 +925,8 @@ desc_pool_alloc_bvh_multi :: proc(pool: ^Descriptor_Pool, bvhs: []BVH_Descriptor
 {
     assert(len(bvhs) <= int(max(u8)))
     idx := desc_pool_resource_alloc(&pool.bvh_pool, i64(len(bvhs)))
-    for bvh in bvhs {
-        desc_pool_resource_update(&pool.bvh_pool, idx, bvh)
+    for bvh, i in bvhs {
+        desc_pool_resource_update(&pool.bvh_pool, idx + u32(i), bvh)
     }
     return idx
 }
