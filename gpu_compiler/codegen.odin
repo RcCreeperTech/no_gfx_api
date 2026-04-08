@@ -427,7 +427,7 @@ codegen_statement :: proc(statement: ^Ast_Statement, insert_semi := true)
         }
         case ^Ast_Return:
         {
-            if is_main
+            if is_main && stmt.expr != nil
             {
                 type := stmt.expr.type
                 if type.kind == .Label do type = type_get_base(type)
