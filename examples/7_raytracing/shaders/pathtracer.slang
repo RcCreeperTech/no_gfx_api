@@ -199,7 +199,7 @@ HitInfo ray_scene_intersection(Ray ray, uint tlas_id, Scene scene)
     float4 n2 = mesh.normal[mesh.indices[base_idx + 2]];
     float4 normal = normalize(n0 * w + n1 * hit.barycentrics.x + n2 * hit.barycentrics.y);
     if (hit.front_face) normal *= -1.0;
-    float4 world_normal = normalize(mul(float4(normal.xyz, 1.0), hit.world_to_object));
+    float4 world_normal = normalize(mul(float4(normal.xyz, 0.0), hit.world_to_object));
 
     hit_info.hit = true;
     hit_info.t = hit.t;
