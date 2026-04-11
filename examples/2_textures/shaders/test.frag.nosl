@@ -7,7 +7,7 @@ Data :: struct
     fade: float,
 }
 
-main :: (uv: vec2 @in_loc(0), data: ^Data @data) -> vec4 @out_loc(0)
+main :: (uv: vec2 @input(0), data: ^Data @data) -> vec4 @output(0)
 {
     return mix(texture_sample(data.texture_a, data.s, uv), texture_sample(data.texture_b, data.s, uv), vec4(data.fade));
 }

@@ -58,6 +58,10 @@ Token_Type :: enum
 
     Ident,
     Attribute,  // Identifier with @ in front
+    // Qualifiers
+    Flat,
+    Noperspective,
+    Centroid,
 
     Arrow,  // For function return types
 
@@ -95,6 +99,9 @@ Keywords := map[string]Token_Type {
     "true"   = .True,
     "false"  = .False,
     "cast"   = .Cast,
+    "flat"   = .Flat,
+    "no_perspective" = .Noperspective,
+    "centroid" = .Centroid,
 }
 One_Char_Operators := map[u8]Token_Type {
     '(' = .LParen,
@@ -520,6 +527,9 @@ token_type_to_string :: proc(type: Token_Type) -> string
         case .Div_Equals:   return "/="
         case .Ident:        return "identifier"
         case .Attribute:    return "attribute"
+        case .Flat:         return "flat"
+        case .Noperspective:return "no_perspective"
+        case .Centroid:     return "centroid"
         case .Arrow:        return "->"
         case .Struct:       return "struct"
         case .If:           return "if"
@@ -552,62 +562,13 @@ get_token_lit_int_value :: proc(token: Token) -> u64
 
 is_token_type_assign :: proc(type: Token_Type) -> bool
 {
-    switch type
+    #partial switch type
     {
-        case .Unknown:      return false
-        case .LParen:       return false
-        case .RParen:       return false
-        case .LBracket:     return false
-        case .RBracket:     return false
-        case .LBrace:       return false
-        case .RBrace:       return false
-        case .Plus:         return false
-        case .Minus:        return false
-        case .Mul:          return false
-        case .Div:          return false
-        case .Modulo:       return false
-        case .Greater:      return false
-        case .Less:         return false
         case .Assign:       return true
-        case .Dot:          return false
-        case .Comma:        return false
-        case .Colon:        return false
-        case .Semi:         return false
-        case .Caret:        return false
-        case .Bitwise_And:  return false
-        case .Bitwise_Or:   return false
-        case .Bitwise_Xor:  return false
-        case .LShift:       return false
-        case .RShift:       return false
-        case .And:          return false
-        case .Or:           return false
-        case .Not:          return false
-        case .LE:           return false
-        case .GE:           return false
-        case .EQ:           return false
-        case .NEQ:          return false
         case .Plus_Equals:  return true
         case .Minus_Equals: return true
         case .Mul_Equals:   return true
         case .Div_Equals:   return true
-        case .Ident:        return false
-        case .Attribute:    return false
-        case .Arrow:        return false
-        case .Struct:       return false
-        case .If:           return false
-        case .Else:         return false
-        case .For:          return false
-        case .Break:        return false
-        case .Continue:     return false
-        case .Discard:      return false
-        case .Return:       return false
-        case .IntLit:       return false
-        case .FloatLit:     return false
-        case .StrLit:       return false
-        case .True:         return false
-        case .False:        return false
-        case .Cast:         return false
-        case .EOS:          return false
     }
-    return {}
+    return false
 }

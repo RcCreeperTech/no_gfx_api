@@ -30,11 +30,27 @@ codegen :: proc(ast: Ast, shader_type: Shader_Type, input_path: string, output_p
 
     context.allocator = codegen_arena
 
-    for loc, &type in ast.used_out_locations {
-        writefln("layout(location = %v) out %v _res_out_loc%v_;", loc, type_to_glsl(&type), loc)
+    for output, &type in ast.used_outputs
+    {
+        write_begin("")
+        writef("layout(location = %v) out ", output.loc)
+        for spec in output.specs
+        {
+            write(attr_spec_to_glsl(spec))
+            write(" ")
+        }
+        writefln("%v _res_out_loc%v_;", type_to_glsl(&type), output.loc)
     }
-    for loc, &type in ast.used_in_locations {
-        writefln("layout(location = %v) in %v _res_in_loc%v_;", loc, type_to_glsl(&type), loc)
+    for input, &type in ast.used_inputs
+    {
+        write_begin("")
+        writef("layout(location = %v) in ", input.loc)
+        for spec in input.specs
+        {
+            write(attr_spec_to_glsl(spec))
+            write(" ")
+        }
+        writefln("%v _res_in_loc%v_;", type_to_glsl(&type), input.loc)
     }
 
     writeln("")
@@ -438,7 +454,7 @@ codegen_statement :: proc(statement: ^Ast_Statement, insert_semi := true)
                 }
                 else
                 {
-                    if ret_attr != nil && ret_attr.?.type == .Out_Loc
+                    if ret_attr != nil && ret_attr.?.type == .Output
                     {
                         writef("%v = ", attribute_to_glsl(ret_attr.?, writer.ast, writer.shader_type))
                         codegen_expr(stmt.expr)
@@ -860,7 +876,7 @@ unary_op_to_glsl :: proc(op: Ast_Unary_Op) -> string
 
 attribute_to_glsl :: proc(attribute: Ast_Attribute, ast: Ast, shader_type: Shader_Type) -> string
 {
-    val_str := runtime.cstring_to_string(fmt.caprint(attribute.arg, allocator = context.allocator))
+    val_str := runtime.cstring_to_string(fmt.caprint(attribute.loc, allocator = context.allocator))
 
     switch attribute.type
     {
@@ -882,8 +898,8 @@ attribute_to_glsl :: proc(attribute: Ast_Attribute, ast: Ast, shader_type: Shade
         case .Local_Invocation_ID: return "gl_LocalInvocationID"
         case .Group_Size: return "gl_WorkGroupSize"
         case .Global_Invocation_ID: return "gl_GlobalInvocationID"
-        case .Out_Loc:  return strings.concatenate({"_res_out_loc", val_str, "_"})
-        case .In_Loc:   return strings.concatenate({"_res_in_loc", val_str, "_"})
+        case .Output:  return strings.concatenate({"_res_out_loc", val_str, "_"})
+        case .Input:   return strings.concatenate({"_res_in_loc", val_str, "_"})
     }
 
     return {}
@@ -925,6 +941,17 @@ ident_to_glsl :: proc(ident: string) -> string
     strings.write_string(&sb, ident)
     strings.write_rune(&sb, '_')
     return strings.clone(strings.to_string(sb))
+}
+
+attr_spec_to_glsl :: proc(spec: Ast_Attribute_Specifier) -> string
+{
+    switch spec
+    {
+        case .Flat: return "flat"
+        case .Centroid: return "centroid"
+        case .No_Perspective: return "noperspective"
+    }
+    return ""
 }
 
 codegen_scope_decls :: proc(scope: ^Ast_Scope)

@@ -26,7 +26,7 @@ IndirectData :: struct
 Output :: struct
 {
     pos: vec4 @position,
-    color: vec4 @out_loc(0),
+    color: vec4 @output(0),
 }
 
 main :: (vert_id: uint @vert_id, data: ^Data @data, indirect_data: ^IndirectData @indirect_data) -> Output

@@ -13,12 +13,12 @@ Data :: struct
 
 GBuffer_Output :: struct
 {
-    albedo: vec4 @out_loc(0),
-    normal: vec4 @out_loc(1),
-    metallic_roughness: vec4 @out_loc(2),
+    albedo: vec4 @output(0),
+    normal: vec4 @output(1),
+    metallic_roughness: vec4 @output(2),
 }
 
-main :: (normal_vert: vec4 @in_loc(0), uv: vec2 @in_loc(1), world_pos: vec4 @in_loc(2), data: ^Data @data) -> GBuffer_Output
+main :: (normal_vert: vec4 @input(0), uv: vec2 @input(1), world_pos: vec4 @input(2), data: ^Data @data) -> GBuffer_Output
 {
     // Sample base color texture
     base_color := texture_sample(data.base_color_map, data.base_color_map_sampler, uv);

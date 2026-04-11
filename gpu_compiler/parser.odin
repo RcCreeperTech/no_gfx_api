@@ -24,8 +24,8 @@ Any_Node :: union
 Ast :: struct
 {
     used_types: [dynamic]Ast_Type,
-    used_in_locations: map[u32]Ast_Type,
-    used_out_locations: map[u32]Ast_Type,
+    used_inputs: map[^Ast_Attribute]Ast_Type,
+    used_outputs: map[^Ast_Attribute]Ast_Type,
     used_data_type: ^Ast_Type,
     used_indirect_data_type: ^Ast_Type,
     scope: ^Ast_Scope,
@@ -102,14 +102,24 @@ Ast_Attribute_Type :: enum
     Group_Size,
 
     // With args:
-    Out_Loc,
-    In_Loc,
+    Output,
+    Input,
 }
+
+Ast_Attribute_Specifier :: enum
+{
+    Flat,
+    Centroid,
+    No_Perspective,
+}
+
+Ast_Attribute_Specifiers :: bit_set[Ast_Attribute_Specifier]
 
 Ast_Attribute :: struct
 {
     type: Ast_Attribute_Type,
-    arg: u32
+    specs: Ast_Attribute_Specifiers,
+    loc: u32
 }
 
 Ast_Binary_Op :: enum
@@ -382,8 +392,8 @@ Parser :: struct
     error: bool,
     scope: ^Ast_Scope,
     used_types: [dynamic]Ast_Type,
-    used_out_locations: map[u32]Ast_Type,
-    used_in_locations: map[u32]Ast_Type,
+    used_outputs: map[^Ast_Attribute]Ast_Type,
+    used_inputs: map[^Ast_Attribute]Ast_Type,
     used_data_type: ^Ast_Type,
     used_indirect_data_type: ^Ast_Type,
 }
@@ -461,8 +471,8 @@ _parse_file :: proc(using p: ^Parser) -> Ast
     }
 
     ast.used_types = used_types
-    ast.used_out_locations = used_out_locations
-    ast.used_in_locations = used_in_locations
+    ast.used_outputs = used_outputs
+    ast.used_inputs = used_inputs
     ast.used_data_type = used_data_type
     ast.used_indirect_data_type = used_indirect_data_type
     return ast
@@ -523,10 +533,10 @@ parse_proc_def :: proc(using p: ^Parser) -> ^Ast_Proc_Def
             proc_type.ret_attr = parse_attribute(p)
             if proc_type.ret_attr != nil
             {
-                if proc_type.ret_attr.?.type == .In_Loc {
-                    used_in_locations[proc_type.ret_attr.?.arg] = proc_type.ret^
-                } else if proc_type.ret_attr.?.type == .Out_Loc {
-                    used_out_locations[proc_type.ret_attr.?.arg] = proc_type.ret^
+                if proc_type.ret_attr.?.type == .Input {
+                    used_inputs[&proc_type.ret_attr.?] = proc_type.ret^
+                } else if proc_type.ret_attr.?.type == .Output {
+                    used_outputs[&proc_type.ret_attr.?] = proc_type.ret^
                 }
             }
         }
@@ -1022,10 +1032,10 @@ parse_decl_list_elem :: proc(using p: ^Parser, add_to_scope: bool) -> ^Ast_Decl
             used_indirect_data_type = node.type
         }
 
-        if node.attr.?.type == .In_Loc {
-            used_in_locations[node.attr.?.arg] = node.type^
-        } else if node.attr.?.type == .Out_Loc {
-            used_out_locations[node.attr.?.arg] = node.type^
+        if node.attr.?.type == .Input {
+            used_inputs[&node.attr.?] = node.type^
+        } else if node.attr.?.type == .Output {
+            used_outputs[&node.attr.?] = node.type^
         }
     }
 
@@ -1134,22 +1144,66 @@ parse_attribute :: proc(using p: ^Parser) -> Maybe(Ast_Attribute)
         case "local_invocation_id":  attr.type = .Local_Invocation_ID
         case "group_size":           attr.type = .Group_Size
         case "global_invocation_id": attr.type = .Global_Invocation_ID
-        case "in_loc":
+        case "input":
         {
             // ??? Why is the compiler making me do this?
-            attr.type, _ = .In_Loc,
+            attr.type, _ = .Input,
             required_token(p, .LParen)
             num_token := required_token(p, .IntLit)
-            attr.arg = u32(get_token_lit_int_value(num_token))
+            attr.loc = u32(get_token_lit_int_value(num_token))
+
+            if optional_token(p, .Comma)
+            {
+                for true
+                {
+                    #partial switch tokens[at].type
+                    {
+                        case .Flat: attr.specs += { .Flat }
+                        case .Centroid: attr.specs += { .Centroid }
+                        case .Noperspective: attr.specs += { .No_Perspective }
+                        case: parse_error(p, "Unexpected token '%v': expecting an attribute specifier", tokens[at].text)
+                    }
+
+                    at += 1
+
+                    comma_present := optional_token(p, .Comma)
+                    if !comma_present do break
+                    if comma_present && (tokens[at].type == .RParen || tokens[at].type == .RBrace) do break
+                    if error do break
+                }
+            }
+
             required_token(p, .RParen)
         }
-        case "out_loc":
+        case "output":
         {
             // ??? Why is the compiler making me do this?
-            attr.type, _ = .Out_Loc,
+            attr.type, _ = .Output,
             required_token(p, .LParen)
             num_token := required_token(p, .IntLit)
-            attr.arg = u32(get_token_lit_int_value(num_token))
+            attr.loc = u32(get_token_lit_int_value(num_token))
+
+            if optional_token(p, .Comma)
+            {
+                for true
+                {
+                    #partial switch tokens[at].type
+                    {
+                        case .Flat: attr.specs += { .Flat }
+                        case .Centroid: attr.specs += { .Centroid }
+                        case .Noperspective: attr.specs += { .No_Perspective }
+                        case: parse_error(p, "Unexpected token '%v': expecting an attribute specifier", tokens[at].text)
+                    }
+
+                    at += 1
+
+                    comma_present := optional_token(p, .Comma)
+                    if !comma_present do break
+                    if comma_present && (tokens[at].type == .RParen || tokens[at].type == .RBrace) do break
+                    if error do break
+                }
+            }
+
             required_token(p, .RParen)
         }
         case:

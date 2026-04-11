@@ -9,7 +9,7 @@ Data :: struct
     selected_texture_type: int,
 }
 
-main :: (uv: vec2 @in_loc(0), data: ^Data @data) -> vec4 @out_loc(0)
+main :: (uv: vec2 @input(0), data: ^Data @data) -> vec4 @output(0)
 {
     // Implementing the final PBR pass is left as an exercise to the reader.
 
