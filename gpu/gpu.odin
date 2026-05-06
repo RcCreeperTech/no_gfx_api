@@ -401,6 +401,15 @@ cmd_insert_debug_label: proc(cmd_buf: Command_Buffer, name: string, color: [4]f3
 /////////////////////////
 // Userland Utilities
 
+// Pointer
+ptr_advance :: proc(addr: ptr, #any_int offset: i64) -> ptr
+{
+    res := addr
+    if res.cpu != nil { res.cpu = rawptr(uintptr(res.cpu) + uintptr(offset)) }
+    res.gpu.ptr = rawptr(uintptr(res.gpu.ptr) + uintptr(offset))
+    return addr
+}
+
 // Slice
 // end == -1 means "until the end"
 subslice :: #force_inline proc(s: slice_t($T), #any_int start: i64, #any_int end: i64 = -1) -> slice_t(T)

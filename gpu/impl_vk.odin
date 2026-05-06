@@ -113,13 +113,6 @@ BVH_Info :: struct
 }
 
 @(private="file")
-Key :: struct
-{
-    idx: u64
-}
-#assert(size_of(Key) == 8)
-
-@(private="file")
 Alloc_Info :: struct
 {
     buf_handle: vk.Buffer,
@@ -129,6 +122,12 @@ Alloc_Info :: struct
     align: u32,
     buf_size: vk.DeviceSize,
     alloc_type: Allocation_Type,
+}
+
+Alloc_Impl_Info :: struct
+{
+    range_end: rawptr,
+    handle: Alloc_Handle,
 }
 
 @(private="file")
@@ -1343,7 +1342,9 @@ _mem_alloc_raw :: proc(#any_int el_size, #any_int el_count, #any_int align: i64,
         alloc_type = alloc_type,
     }
     alloc_handle := pool_add(&ctx.allocs, alloc_info, { created_at = loc })
-    p.gpu._impl[0] = u64(uintptr(alloc_handle))
+    end_ptr := rawptr(uintptr(p.gpu.ptr) + uintptr(bytes))
+    alloc_impl := Alloc_Impl_Info { end_ptr, alloc_handle }
+    p.gpu._impl = transmute([2]u64) alloc_impl
     return p
 }
 
@@ -1372,7 +1373,8 @@ _mem_suballoc :: proc(addr: ptr, offset, el_size, el_count: i64, loc := #caller_
 
 _mem_free_raw :: proc(addr: gpuptr, loc := #caller_location)
 {
-    alloc := transmute(Alloc_Handle) addr._impl[0]
+    alloc_impl := transmute(Alloc_Impl_Info) addr._impl
+    alloc := alloc_impl.handle
 
     if ctx.validation
     {
@@ -1424,7 +1426,8 @@ _texture_create :: proc(desc: Texture_Desc, storage: gpuptr, queue: Queue = .Mai
     desc_clean := texture_desc_cleanup(desc)
 
     queue_to_use := queue
-    alloc_info := pool_get(&ctx.allocs, transmute(Alloc_Handle) storage._impl[0])
+    alloc_impl := transmute(Alloc_Impl_Info) storage._impl
+    alloc_info := pool_get(&ctx.allocs, alloc_impl.handle)
 
     image: vk.Image
     offset := uintptr(storage.ptr) - uintptr(alloc_info.gpu)
@@ -2168,10 +2171,10 @@ _cmd_mem_copy_raw :: proc(cmd_buf: Command_Buffer, dst, src: gpuptr, #any_int by
 
     cmd_buf_info := pool_get(&ctx.command_buffers, cmd_buf)
 
-    src_alloc := transmute(Alloc_Handle) src._impl[0]
-    src_alloc_info := pool_get(&ctx.allocs, src_alloc)
-    dst_alloc := transmute(Alloc_Handle) dst._impl[0]
-    dst_alloc_info := pool_get(&ctx.allocs, dst_alloc)
+    src_alloc_impl := transmute(Alloc_Impl_Info) src._impl
+    src_alloc_info := pool_get(&ctx.allocs, src_alloc_impl.handle)
+    dst_alloc_impl := transmute(Alloc_Impl_Info) dst._impl
+    dst_alloc_info := pool_get(&ctx.allocs, dst_alloc_impl.handle)
 
     src_buf, src_offset, _ := get_buf_offset_from_gpu_ptr(src)
     dst_buf, dst_offset, _ := get_buf_offset_from_gpu_ptr(dst)
@@ -3268,7 +3271,8 @@ get_buf_offset_from_gpu_ptr :: proc(p: gpuptr) -> (buf: vk.Buffer, offset: u32, 
 {
     if p == {} do return {}, {}, false
 
-    alloc_info := pool_get(&ctx.allocs, transmute(Alloc_Handle) p._impl[0])
+    alloc_impl := transmute(Alloc_Impl_Info) p._impl
+    alloc_info := pool_get(&ctx.allocs, alloc_impl.handle)
 
     buf = alloc_info.buf_handle
     offset = u32(uintptr(p.ptr) - uintptr(alloc_info.gpu))
@@ -3280,7 +3284,8 @@ get_buf_size_from_gpu_ptr :: proc(p: gpuptr) -> (size: vk.DeviceSize, ok: bool)
 {
     if p == {} do return {}, false
 
-    alloc_info := pool_get(&ctx.allocs, transmute(Alloc_Handle) p._impl[0])
+    alloc_impl := transmute(Alloc_Impl_Info) p._impl
+    alloc_info := pool_get(&ctx.allocs, alloc_impl.handle)
     return alloc_info.buf_size, true
 }
 
@@ -3630,7 +3635,8 @@ check_ptr :: proc(p: gpuptr, name: string, loc: runtime.Source_Code_Location) ->
         return false
     }
 
-    alloc_handle := transmute(Alloc_Handle) p._impl[0]
+    alloc_impl := transmute(Alloc_Impl_Info) p._impl
+    alloc_handle := alloc_impl.handle
     if !pool_check_no_message(&ctx.allocs, alloc_handle) {
         log.errorf("'%v' address is stale, has been freed before.", name, location = loc)
         return false
@@ -3653,7 +3659,8 @@ check_ptr_allow_nil :: proc(p: gpuptr, name: string, loc: runtime.Source_Code_Lo
         return true
     }
 
-    alloc_handle := transmute(Alloc_Handle) p._impl[0]
+    alloc_impl := transmute(Alloc_Impl_Info) p._impl
+    alloc_handle := alloc_impl.handle
     if !pool_check_no_message(&ctx.allocs, alloc_handle) {
         log.errorf("'%v' address is stale, has been freed before.", name, location = loc)
         return false
@@ -3677,7 +3684,8 @@ check_ptr_range :: proc(p: gpuptr, #any_int size: i64, name: string, loc: runtim
         return false
     }
 
-    alloc_handle := transmute(Alloc_Handle) p._impl[0]
+    alloc_impl := transmute(Alloc_Impl_Info) p._impl
+    alloc_handle := alloc_impl.handle
     if !pool_check_no_message(&ctx.allocs, alloc_handle) {
         log.errorf("'%v' address is stale, has been freed before.", name, location = loc)
         return false
