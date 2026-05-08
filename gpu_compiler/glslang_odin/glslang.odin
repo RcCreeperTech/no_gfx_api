@@ -7,32 +7,15 @@ import "core:c"
 
 when ODIN_OS == .Windows
 {
-    //when ODIN_DEBUG
-    when false
-    {
-        @(extra_linker_flags = "/NODEFAULTLIB:libcmt")  // In case of 4099 warnings, then use /ignore:4099
-        foreign import glslang {
-            "glslang/Debug/lib/GenericCodeGend.lib",
-            "glslang/Debug/lib/glslang-default-resource-limitsd.lib",
-            "glslang/Debug/lib/glslangd.lib",
-            "glslang/Debug/lib/MachineIndependentd.lib",
-            "glslang/Debug/lib/SPIRV-Tools-optd.lib",
-            "glslang/Debug/lib/SPIRV-Toolsd.lib",
-            "glslang/Debug/lib/SPIRVd.lib",
-        }
-    }
-    else
-    {
-        @(extra_linker_flags = "/NODEFAULTLIB:libcmt")
-        foreign import glslang {
-            "glslang/Release/lib/GenericCodeGen.lib",
-            "glslang/Release/lib/glslang-default-resource-limits.lib",
-            "glslang/Release/lib/glslang.lib",
-            "glslang/Release/lib/MachineIndependent.lib",
-            "glslang/Release/lib/SPIRV-Tools-opt.lib",
-            "glslang/Release/lib/SPIRV-Tools.lib",
-            "glslang/Release/lib/SPIRV.lib",
-        }
+    @(extra_linker_flags = "/NODEFAULTLIB:libcmt")
+    foreign import glslang {
+        "libs/GenericCodeGen.lib",
+        "libs/glslang-default-resource-limits.lib",
+        "libs/glslang.lib",
+        "libs/MachineIndependent.lib",
+        "libs/SPIRV-Tools-opt.lib",
+        "libs/SPIRV-Tools.lib",
+        "libs/SPIRV.lib",
     }
 }
 
