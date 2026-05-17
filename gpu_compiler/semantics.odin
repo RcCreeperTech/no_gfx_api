@@ -645,7 +645,8 @@ intrinsic_lookup :: proc(using c: ^Checker, token: Token, args: []^Ast_Expr) -> 
         if intr.name == token.text && intr.type.kind == .Proc
         {
             fmt.sbprintf(&sb, "\t%v :: (", intr.name)
-            for arg in intr.type.args {
+            for arg, i in intr.type.args {
+                if i > 0 do str.write_string(&sb, ", ")
                 fmt.sbprintf(&sb, "%v: %v", arg.name, type_to_string(arg.type, arena = scratch))
             }
             if intr.type.ret != nil {
