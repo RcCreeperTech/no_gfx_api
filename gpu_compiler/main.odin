@@ -62,7 +62,7 @@ main :: proc()
     output_prefix := strings.concatenate({ fp.dir(opt.out), "/", fp.short_stem(opt.out) }, allocator = perm_arena)
 
     parse_tasks: [dynamic; MAX_FILES]Parse_Task
-    append(&parse_tasks, Parse_Task { file = { filename = input_path }, parsed = false, ast = {}})
+    append(&parse_tasks, Parse_Task { file = { filename = input_path }, is_main = true})
 
     ok_parse := true
     for true
@@ -102,7 +102,7 @@ main :: proc()
         os.exit(1)
     }
 
-    glsl_source := codegen(parse_tasks[0].ast, input_path)
+    glsl_source := codegen_files(&parse_tasks)
 
     ok_c := output_all_spirv_files(glsl_source, input_path, output_prefix, parse_tasks[0].ast, shader_stage_hint)
     if !ok_c do os.exit(1)
@@ -120,6 +120,8 @@ Parse_Task :: struct
     loaded: bool,
     parsed: bool,
     ast: Ast,
+    is_main: bool,
+    module_name: string,
 }
 
 load_file_and_null_terminate :: proc(path: string, allocator: runtime.Allocator) -> ([]u8, bool)

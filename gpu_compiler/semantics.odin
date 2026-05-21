@@ -14,13 +14,16 @@ typecheck_files :: proc(parse_tasks: ^[dynamic; MAX_FILES]Parse_Task, allocator:
 
     res := true
     for &task in parse_tasks {
-        res &= typecheck_ast(&task.ast, task.file, allocator)
+        res &= typecheck_ast_decls(&task.ast, task.file, task.module_name, task.is_main, allocator)
+    }
+    for &task in parse_tasks {
+        res &= typecheck_ast_defs(&task.ast, task.file, allocator)
     }
 
     return res
 }
 
-typecheck_ast :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bool
+typecheck_ast_decls :: proc(ast: ^Ast, file: File, module_name: string, is_module_main: bool, allocator: runtime.Allocator) -> bool
 {
     context.allocator = allocator
 
@@ -42,6 +45,8 @@ typecheck_ast :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bo
             case .Unknown: {}
             case .Proc:
             {
+                decl.glsl_name = global_ident_to_glsl(decl.name, module_name, is_module_main)
+
                 for arg in decl.type.args
                 {
                     resolve_type(&c, arg.type)
@@ -53,8 +58,11 @@ typecheck_ast :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bo
             }
             case .Struct:
             {
+                decl.glsl_name = global_ident_to_glsl(decl.name, module_name, is_module_main)
+
                 for member in decl.type.members
                 {
+                    member.glsl_name = ident_to_glsl(member.name)
                     resolve_type(&c, member.type)
                 }
 
@@ -62,12 +70,31 @@ typecheck_ast :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bo
                     typecheck_error(&c, decl.token, "Empty structs aren't allowed.")
                 }
             }
-            case .Label: {}
-            case .Primitive: {}
-            case .Pointer: {}
-            case .Slice: {}
-            case .Array: {}
+            case .Label, .Primitive, .Pointer, .Slice, .Array:
+            {
+                decl.glsl_name = global_ident_to_glsl(decl.name, module_name, is_module_main)
+            }
         }
+    }
+
+    return !c.error
+}
+
+typecheck_ast_defs :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bool
+{
+    context.allocator = allocator
+
+    c := Checker {
+        ast = ast,
+        file = file,
+        scope = ast.scope,
+        error = false,
+        cur_proc = nil,
+        proc_ret = nil,
+    }
+
+    for global_var in ast.global_vars {
+        typecheck_statement(&c, global_var)
     }
 
     for proc_def in ast.procs
@@ -77,7 +104,9 @@ typecheck_ast :: proc(ast: ^Ast, file: File, allocator: runtime.Allocator) -> bo
         for decl in proc_def.scope.decls
         {
             resolve_type(&c, decl.type)
-            decl.glsl_name = ident_to_glsl(decl.name)
+            if decl.glsl_name == "" {
+                decl.glsl_name = ident_to_glsl(decl.name)
+            }
 
             if decl.attr != nil && decl.attr.?.type == .Data
             {
@@ -379,6 +408,7 @@ typecheck_expr :: proc(using c: ^Checker, expression: ^Ast_Expr)
                     }
 
                     expr.is_module_access = true
+                    expr.module_name = module.info.module_name
                     break
                 }
             }
@@ -402,7 +432,7 @@ typecheck_expr :: proc(using c: ^Checker, expression: ^Ast_Expr)
             if base.kind == .Poison do break
 
             if base.kind != .Struct {
-                typecheck_error(c, expr.token, "Can't access members on this type.")
+                typecheck_error(c, expr.token, "Can't access members on type '%v'.", type_to_string(expr.target.type, arena = scratch))
                 break
             }
 

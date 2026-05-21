@@ -188,6 +188,7 @@ Ast_Member_Access :: struct
     member: Token,
     is_swizzle: bool,
     is_module_access: bool,
+    module_name: string,  // This is its unique identifier. Locally defined module name can be obtained with target.token.text
 }
 
 Ast_Array_Access :: struct
@@ -451,10 +452,27 @@ _parse_file :: proc(using p: ^Parser) -> Ast
                 }
                 else
                 {
-                    append(parse_tasks, Parse_Task { file = { filename = cleaned }, parsed = false })
+                    found_module: ^Parse_Task
+                    for &module in parse_tasks {
+                        if module.file.filename == cleaned {
+                            found_module = &module
+                            break
+                        }
+                    }
+
+                    if found_module == nil
+                    {
+                        new_module := Parse_Task {
+                            file = { filename = cleaned },
+                            module_name = os.short_stem(cleaned)  // TODO: Disambiguate the name in the case of a name collision
+                        }
+                        append(parse_tasks, new_module)
+                        found_module = &parse_tasks[len(parse_tasks)-1]
+                    }
+
                     to_append := Ast_Import {
-                        module_name = os.stem(cleaned),
-                        info = &parse_tasks[len(parse_tasks)-1]
+                        module_name = os.short_stem(cleaned),
+                        info = found_module,
                     }
                     append(&ast.imports, to_append)
                 }

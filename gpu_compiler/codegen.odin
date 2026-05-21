@@ -15,11 +15,15 @@ Shader_Stage :: enum
     Compute
 }
 
-codegen :: proc(ast: Ast, input_path: string) -> string
+codegen_files :: proc(parse_tasks: ^[dynamic; MAX_FILES]Parse_Task) -> string
 {
-    writer.ast = ast
+    assert(len(parse_tasks) > 0)
 
-    write_preamble()
+    used_features: Lang_Features
+    for task in parse_tasks {
+        used_features += task.ast.used_features
+    }
+    write_preamble(used_features)
 
     arena_backing: vmem.Arena
     ok_a := vmem.arena_init_growing(&arena_backing)
@@ -30,8 +34,22 @@ codegen :: proc(ast: Ast, input_path: string) -> string
     context.allocator = codegen_arena
 
     writeln("")
+    writefln("layout(buffer_reference, scalar) readonly buffer _res_ptr_void {{ uint _res_void_; }};")
 
-    writefln("layout(buffer_reference) readonly buffer _res_ptr_void;")
+    for task in parse_tasks {
+        codegen_ast_decls(task.ast, task.file.filename)
+    }
+    for task in parse_tasks {
+        codegen_ast_defs(task.ast, task.file.filename, task.is_main)
+    }
+
+    return strings.to_string(writer.builder)
+}
+
+codegen_ast_decls :: proc(ast: Ast, input_path: string)
+{
+    writer.ast = ast
+
     for &type in ast.used_types
     {
         if type.kind == .Pointer || type.kind == .Slice {
@@ -76,7 +94,7 @@ codegen :: proc(ast: Ast, input_path: string) -> string
                 }
 
                 ret_type_glsl := "void" if is_entrypoint else type_to_glsl(decl.type.ret)
-                writef("%v %v(", ret_type_glsl, "main" if is_entrypoint else decl.name)
+                writef("%v %v(", ret_type_glsl, "main" if is_entrypoint else decl.glsl_name)
 
                 if !is_entrypoint
                 {
@@ -99,6 +117,11 @@ codegen :: proc(ast: Ast, input_path: string) -> string
             }
         }
     }
+}
+
+codegen_ast_defs :: proc(ast: Ast, input_path: string, is_module_main: bool)
+{
+    writer.ast = ast
 
     // Generate all global var decls
     for decl in ast.scope.decls
@@ -114,7 +137,7 @@ codegen :: proc(ast: Ast, input_path: string) -> string
                 {
                     if global.decl == decl
                     {
-                        writef("%v %v", type_to_glsl(global.decl.type), global.decl.name)
+                        writef("%v %v", type_to_glsl(global.decl.type), global.decl.glsl_name)
                         write(" = ")
                         codegen_expr(global.expr)
                         writeln(";")
@@ -127,14 +150,12 @@ codegen :: proc(ast: Ast, input_path: string) -> string
                 if !has_def
                 {
                     // No need to explicitly initialize to zero because it's a global.
-                    writefln("%v %v;", type_to_glsl(decl.type), decl.name)
+                    writefln("%v %v;", type_to_glsl(decl.type), decl.glsl_name)
                 }
             }
         }
     }
 
-
-    writefln("layout(buffer_reference, scalar) readonly buffer _res_ptr_void {{ uint _res_void_; }};")
     for &type in ast.used_types
     {
         if type.kind == .Pointer {
@@ -162,64 +183,67 @@ codegen :: proc(ast: Ast, input_path: string) -> string
     }
 
     // Generate push constants for entrypoints
-    writeln("layout(push_constant, scalar) uniform Push")
-    writeln("{")
-    if writer_scope()
+    if is_module_main
     {
-        writefln("#ifdef _res_type_compute_")
-        for proc_def in ast.procs
+        writeln("layout(push_constant, scalar) uniform Push")
+        writeln("{")
+        if writer_scope()
         {
-            decl := proc_def.decl
-            is_entrypoint := decl.is_entrypoint
-            if !is_entrypoint do continue
-            if decl.entrypoint_stage != .Compute do continue
-
-            writefln("#ifdef _res_entry_%v", decl.name)
-
-            data_type := find_entrypoint_data_type(decl)
-            if data_type != nil
+            writefln("#ifdef _res_type_compute_")
+            for proc_def in ast.procs
             {
-                writefln("%v _res_compute_data_;", type_to_glsl(data_type))
+                decl := proc_def.decl
+                is_entrypoint := decl.is_entrypoint
+                if !is_entrypoint do continue
+                if decl.entrypoint_stage != .Compute do continue
+
+                writefln("#ifdef _res_entry_%v", decl.name)
+
+                data_type := find_entrypoint_data_type(decl)
+                if data_type != nil
+                {
+                    writefln("%v _res_compute_data_;", type_to_glsl(data_type))
+                }
+                else
+                {
+                    writefln("_res_ptr_void _res_compute_data_;")
+                }
+
+                writefln("#endif")
             }
-            else
+            writefln("#endif")
+
+            writefln("#ifdef _res_type_graphics_")
+            for proc_def in ast.procs
             {
-                writefln("_res_ptr_void _res_compute_data_;")
+                decl := proc_def.decl
+                is_entrypoint := decl.is_entrypoint
+                if !is_entrypoint do continue
+                if decl.entrypoint_stage != .Vertex && decl.entrypoint_stage != .Fragment do continue
+
+                writefln("#ifdef _res_entry_%v", decl.name)
+
+                data_type := find_entrypoint_data_type(decl)
+                if data_type != nil
+                {
+                    writefln("%v _res_vert_data_;", type_to_glsl(data_type))
+                    writefln("%v _res_frag_data_;", type_to_glsl(data_type))
+                }
+                else
+                {
+                    writefln("_res_ptr_void _res_vert_data_;")
+                    writefln("_res_ptr_void _res_frag_data_;")
+                }
+
+                writefln("#endif")
             }
 
+            writefln("%v _res_indirect_data_;", indirect_data_type_glsl)
             writefln("#endif")
         }
-        writefln("#endif")
-
-        writefln("#ifdef _res_type_graphics_")
-        for proc_def in ast.procs
-        {
-            decl := proc_def.decl
-            is_entrypoint := decl.is_entrypoint
-            if !is_entrypoint do continue
-            if decl.entrypoint_stage != .Vertex && decl.entrypoint_stage != .Fragment do continue
-
-            writefln("#ifdef _res_entry_%v", decl.name)
-
-            data_type := find_entrypoint_data_type(decl)
-            if data_type != nil
-            {
-                writefln("%v _res_vert_data_;", type_to_glsl(data_type))
-                writefln("%v _res_frag_data_;", type_to_glsl(data_type))
-            }
-            else
-            {
-                writefln("_res_ptr_void _res_vert_data_;")
-                writefln("_res_ptr_void _res_frag_data_;")
-            }
-
-            writefln("#endif")
-        }
-
-        writefln("%v _res_indirect_data_;", indirect_data_type_glsl)
-        writefln("#endif")
+        writeln("};")
+        writeln("")
     }
-    writeln("};")
-    writeln("")
 
     for proc_def in ast.procs
     {
@@ -233,7 +257,7 @@ codegen :: proc(ast: Ast, input_path: string) -> string
         }
 
         ret_type_glsl := "void" if is_entrypoint else type_to_glsl(decl.type.ret)
-        writef("%v %v(", ret_type_glsl, "main" if is_entrypoint else decl.name)
+        writef("%v %v(", ret_type_glsl, "main" if is_entrypoint else decl.glsl_name)
         if !is_entrypoint
         {
             first := true
@@ -243,7 +267,6 @@ codegen :: proc(ast: Ast, input_path: string) -> string
                 if !first do write(", ")
                 first = false
 
-                arg.glsl_name = ident_to_glsl(arg.name)
                 writef("%v %v", type_to_glsl(arg.type), arg.glsl_name)
             }
         }
@@ -270,8 +293,6 @@ codegen :: proc(ast: Ast, input_path: string) -> string
             writefln("#endif")
         }
     }
-
-    return strings.to_string(writer.builder)
 }
 
 codegen_statement :: proc(statement: ^Ast_Statement, insert_semi := true)
@@ -322,8 +343,6 @@ codegen_statement :: proc(statement: ^Ast_Statement, insert_semi := true)
         }
         case ^Ast_Define_Var:
         {
-            stmt.decl.glsl_name = ident_to_glsl(stmt.decl.name)
-
             // NOTE: In .nosl we do rq := rayquery_init(...) but in GLSL we can't set the rayquery object.
             if stmt.decl.type.primitive_kind == .Ray_Query
             {
@@ -581,7 +600,7 @@ codegen_expr :: proc(expression: ^Ast_Expr)
         {
             if expr.is_module_access
             {
-                ident_to_glsl(expr.member.text)
+                writef("_mod_%v_%v", expr.module_name, ident_to_glsl(expr.member.text))
             }
             else
             {
@@ -999,6 +1018,21 @@ ident_to_glsl :: proc(ident: string) -> string
     return strings.clone(strings.to_string(sb))
 }
 
+global_ident_to_glsl :: proc(ident: string, module_name: string, is_module_main: bool) -> string
+{
+    scratch, _ := acquire_scratch()
+    sb := strings.builder_make_none(allocator = scratch)
+    if !is_module_main
+    {
+        strings.write_string(&sb, "_mod_")
+        strings.write_string(&sb, module_name)
+        strings.write_rune(&sb, '_')
+    }
+    strings.write_string(&sb, ident)
+    strings.write_rune(&sb, '_')
+    return strings.clone(strings.to_string(sb))
+}
+
 attr_spec_to_glsl :: proc(spec: Ast_Attribute_Specifier) -> string
 {
     switch spec
@@ -1159,8 +1193,6 @@ define_proc_variables :: proc(proc_def: ^Ast_Proc_Def)
             }
         }
 
-        var_decl.glsl_name = ident_to_glsl(var_decl.name)
-
         if is_entrypoint && is_param
         {
             // Support "@input"s in structs
@@ -1174,8 +1206,6 @@ define_proc_variables :: proc(proc_def: ^Ast_Proc_Def)
                     if member.attr == nil || member.attr.?.type != .IO {
                         continue
                     }
-
-                    member.glsl_name = ident_to_glsl(member.name)
 
                     set_attr_member(member, var_decl.glsl_name, true)
                 }
@@ -1277,7 +1307,7 @@ writer_scope_end :: proc()
 }
 
 @(private="file")
-write_preamble :: proc()
+write_preamble :: proc(used_features: Lang_Features)
 {
     writeln("#extension GL_EXT_buffer_reference : require")
     writeln("#extension GL_EXT_buffer_reference2 : require")
@@ -1286,7 +1316,7 @@ write_preamble :: proc()
     writeln("#extension GL_EXT_scalar_block_layout : require")
     writeln("#extension GL_EXT_shader_image_load_formatted : require")
     writeln("#extension GL_EXT_debug_printf : require")
-    if .Raytracing in writer.ast.used_features {
+    if .Raytracing in used_features {
         writeln("#extension GL_EXT_ray_query : require")
     }
 
@@ -1302,7 +1332,7 @@ write_preamble :: proc()
     writeln(Intrinsics_Code)
 
     // Utility functions used for codegen
-    if .Raytracing in writer.ast.used_features
+    if .Raytracing in used_features
     {
         writeln(RT_Intrinsics_Code)
     }
