@@ -41,6 +41,7 @@ Ast_Import :: struct
 {
     module_name: string,
     info: ^Parse_Task,
+    using_active: bool,
 }
 
 Ast_Node :: struct
@@ -481,6 +482,41 @@ _parse_file :: proc(using p: ^Parser) -> Ast
                     }
                     append(&ast.imports, to_append)
                 }
+            }
+            case .Using:
+            {
+                if !top_of_file {
+                    parse_error(p, "'using' must be at the top of the file.")
+                }
+
+                at += 1
+
+                if tokens[at].type == .Ident
+                {
+                    using_ident := tokens[at]
+                    found_import := false
+                    for &ast_import in ast.imports
+                    {
+                        if ast_import.module_name == using_ident.text
+                        {
+                            ast_import.using_active = true
+                            found_import = true
+                            break
+                        }
+                    }
+
+                    if !found_import {
+                        parse_error(p, "'%v' not found in modules which were imported so far.", using_ident.text)
+                    }
+
+                    at += 1
+                }
+                else
+                {
+                    required_token(p, .Ident)
+                }
+
+                required_token(p, .Semi)
             }
             case .Ident:
             {
