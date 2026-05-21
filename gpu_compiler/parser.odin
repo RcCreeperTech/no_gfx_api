@@ -439,6 +439,9 @@ _parse_file :: proc(using p: ^Parser) -> Ast
 
                 at += 1
 
+                custom_module_name := tokens[at]
+                custom_module_name_exists := optional_token(p, .Ident)
+
                 import_path := tokens[at]
                 required_token(p, .StrLit)
 
@@ -471,8 +474,9 @@ _parse_file :: proc(using p: ^Parser) -> Ast
                         found_module = &parse_tasks[len(parse_tasks)-1]
                     }
 
+                    import_name := custom_module_name.text if custom_module_name_exists else os.short_stem(cleaned)
                     to_append := Ast_Import {
-                        module_name = os.short_stem(cleaned),
+                        module_name = import_name,
                         info = found_module,
                     }
                     append(&ast.imports, to_append)
