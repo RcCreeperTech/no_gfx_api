@@ -17,7 +17,7 @@ import "vma"
 @(private="file")
 Max_Textures :: 65535
 @(private="file")
-Max_BVHs :: 65535
+Max_BVHs :: 16
 
 @(private="file")
 Graphics_Shader_Push_Constants :: struct #packed {
