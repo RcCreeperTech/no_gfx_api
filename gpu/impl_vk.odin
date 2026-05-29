@@ -51,6 +51,7 @@ Context :: struct
     desc_layouts: [dynamic]vk.DescriptorSetLayout,
     common_pipeline_layout_graphics: vk.PipelineLayout,
     common_pipeline_layout_compute: vk.PipelineLayout,
+    desc_pool: vk.DescriptorPool,
 
     // Resource pools
     allocs: Resource_Pool(Alloc_Handle, Alloc_Info),
@@ -60,6 +61,7 @@ Context :: struct
     shaders: Resource_Pool(Shader, Shader_Info),
     command_buffers: Resource_Pool(Command_Buffer, Command_Buffer_Info),
     semaphores: Resource_Pool(Semaphore, vk.Semaphore),
+    desc_heaps: Resource_Pool(Descriptor_Heap, Descriptor_Heap_Info),
 
     cmd_bufs_sem_vals: [Queue]Semaphore_Value,
 
@@ -179,6 +181,15 @@ Command_Buffer_Info :: struct {
 
     wait_sems: [dynamic]Semaphore_Value,
     signal_sems: [dynamic]Semaphore_Value,
+}
+
+@(private="file")
+Descriptor_Heap_Info :: struct
+{
+    textures: vk.DescriptorSet,
+    textures_rw: vk.DescriptorSet,
+    samplers: vk.DescriptorSet,
+    bvhs: vk.DescriptorSet,
 }
 
 @(private="file")
@@ -683,6 +694,23 @@ _init :: proc(validation := true, loc := #caller_location) -> bool
             }
             vk_check(vk.CreatePipelineLayout(ctx.device, &pipeline_layout_ci, nil, &ctx.common_pipeline_layout_compute))
         }
+
+        // Descriptor Pool
+        {
+            pool_sizes := []vk.DescriptorPoolSize {
+                { type = .SAMPLED_IMAGE, descriptorCount = Max_Textures },
+                { type = .STORAGE_IMAGE, descriptorCount = Max_Textures },
+                { type = .SAMPLER,       descriptorCount = Max_Textures },
+                { type = .ACCELERATION_STRUCTURE_KHR, descriptorCount = Max_BVHs },
+            }
+            desc_pool_ci := vk.DescriptorPoolCreateInfo {
+                sType = .DESCRIPTOR_POOL_CREATE_INFO,
+                maxSets = 128,
+                poolSizeCount = u32(len(pool_sizes)),
+                pPoolSizes = raw_data(pool_sizes)
+            }
+            vk_check(vk.CreateDescriptorPool(ctx.device, &desc_pool_ci, nil, &ctx.desc_pool))
+        }
     }
 
     // Resource pools
@@ -692,6 +720,7 @@ _init :: proc(validation := true, loc := #caller_location) -> bool
     pool_init(&ctx.shaders)
     pool_init(&ctx.command_buffers)
     pool_init(&ctx.semaphores)
+    pool_init(&ctx.desc_heaps)
 
     // VMA allocator
     vma_vulkan_procs := vma.create_vulkan_functions()
@@ -917,13 +946,17 @@ _cleanup :: proc(loc := #caller_location)
 
     destroy_swapchain(&ctx.swapchain)
 
-    for &layout in ctx.desc_layouts {
-        vk.DestroyDescriptorSetLayout(ctx.device, layout, nil)
-    }
-    delete(ctx.desc_layouts)
+    // Common resources
+    {
+        for &layout in ctx.desc_layouts {
+            vk.DestroyDescriptorSetLayout(ctx.device, layout, nil)
+        }
+        delete(ctx.desc_layouts)
 
-    vk.DestroyPipelineLayout(ctx.device, ctx.common_pipeline_layout_graphics, nil)
-    vk.DestroyPipelineLayout(ctx.device, ctx.common_pipeline_layout_compute, nil)
+        vk.DestroyPipelineLayout(ctx.device, ctx.common_pipeline_layout_graphics, nil)
+        vk.DestroyPipelineLayout(ctx.device, ctx.common_pipeline_layout_compute, nil)
+        vk.DestroyDescriptorPool(ctx.device, ctx.desc_pool, nil)
+    }
 
     for semaphore in ctx.cmd_bufs_sem_vals {
         semaphore_destroy(semaphore.sem)
@@ -1678,6 +1711,253 @@ _sampler_descriptor :: proc(sampler_desc: Sampler_Desc, loc := #caller_location)
     return desc
 }
 
+_desc_heap_create :: proc(name := "", loc := #caller_location) -> Descriptor_Heap
+{
+    alloc_info := vk.DescriptorSetAllocateInfo {
+        sType = .DESCRIPTOR_SET_ALLOCATE_INFO,
+        descriptorPool = ctx.desc_pool,
+        descriptorSetCount = u32(len(ctx.desc_layouts)),  // NOTE: This is 3 if the device doesn't support RT
+        pSetLayouts = raw_data(ctx.desc_layouts),
+    }
+
+    desc_sets: [4]vk.DescriptorSet
+    vk_check(vk.AllocateDescriptorSets(ctx.device, &alloc_info, &desc_sets[0]))
+
+    desc_heap_info := Descriptor_Heap_Info {
+        textures = desc_sets[0],
+        textures_rw = desc_sets[1],
+        samplers = desc_sets[2],
+        bvhs = desc_sets[3],
+    }
+    return pool_add(&ctx.desc_heaps, desc_heap_info, { created_at = loc, name = name })
+}
+
+_desc_heap_destroy :: proc(heap: Descriptor_Heap, loc := #caller_location)
+{
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+    heap_info := pool_get(&ctx.desc_heaps, heap)
+
+    to_free := [4]vk.DescriptorSet {
+        heap_info.textures, heap_info.textures_rw, heap_info.samplers, heap_info.bvhs
+    }
+    vk_check(vk.FreeDescriptorSets(ctx.device, ctx.desc_pool, u32(len(ctx.desc_layouts)), &to_free[0]))
+
+    pool_remove(&ctx.desc_heaps, heap)
+}
+
+_desc_heap_set_textures :: proc(heap: Descriptor_Heap, start_idx: u32, textures: []Texture, views: []Texture_View_Desc, loc := #caller_location)
+{
+    assert(len(textures) == len(views))
+
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+    heap_info := pool_get(&ctx.desc_heaps, heap)
+
+    scratch, _ := acquire_scratch()
+    image_infos := make([]vk.DescriptorImageInfo, len(textures), allocator = scratch)
+    for &info, i in image_infos
+    {
+        view_desc := views[i]
+        texture := textures[i]
+
+        tex_info := pool_get(&ctx.textures, texture.handle)
+        vk_image := tex_info.handle
+
+        format := view_desc.format
+        if format == .Default {
+            format = texture.format
+        }
+
+        plane_aspect: vk.ImageAspectFlags = { .DEPTH } if format == .D32_Float else { .COLOR }
+
+        image_view_ci := vk.ImageViewCreateInfo {
+            sType = .IMAGE_VIEW_CREATE_INFO,
+            image = vk_image,
+            viewType = to_vk_texture_view_type(view_desc.type),
+            format = to_vk_texture_format(format),
+            subresourceRange = {
+                aspectMask = plane_aspect,
+                levelCount = texture.mip_count,
+                layerCount = 1,
+            }
+        }
+        view := get_or_add_image_view(texture.handle, image_view_ci)
+
+        info = {
+            sampler = {},
+            imageView = view,
+            imageLayout = .GENERAL,
+        }
+    }
+
+    write := vk.WriteDescriptorSet {
+        sType = .WRITE_DESCRIPTOR_SET,
+        dstSet = heap_info.textures,
+        dstBinding = 0,
+        dstArrayElement = start_idx,
+        descriptorCount = u32(len(textures)),
+        descriptorType = .SAMPLED_IMAGE,
+        pImageInfo = raw_data(image_infos),
+    }
+    vk.UpdateDescriptorSets(ctx.device, 1, &write, 0, nil)
+}
+
+_desc_heap_set_textures_rw :: proc(heap: Descriptor_Heap, start_idx: u32, textures: []Texture, views: []Texture_View_Desc, loc := #caller_location)
+{
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+    heap_info := pool_get(&ctx.desc_heaps, heap)
+
+    scratch, _ := acquire_scratch()
+    image_infos := make([]vk.DescriptorImageInfo, len(textures), allocator = scratch)
+    for &info, i in image_infos
+    {
+        view_desc := views[i]
+        texture := textures[i]
+
+        tex_info := pool_get(&ctx.textures, texture.handle)
+        vk_image := tex_info.handle
+
+        format := view_desc.format
+        if format == .Default {
+            format = texture.format
+        }
+
+        plane_aspect: vk.ImageAspectFlags = { .DEPTH } if format == .D32_Float else { .COLOR }
+
+        image_view_ci := vk.ImageViewCreateInfo {
+            sType = .IMAGE_VIEW_CREATE_INFO,
+            image = vk_image,
+            viewType = to_vk_texture_view_type(view_desc.type),
+            format = to_vk_texture_format(format),
+            subresourceRange = {
+                aspectMask = plane_aspect,
+                levelCount = texture.mip_count,
+                layerCount = 1,
+            }
+        }
+        view := get_or_add_image_view(texture.handle, image_view_ci)
+
+        info = {
+            sampler = {},
+            imageView = view,
+            imageLayout = .GENERAL,
+        }
+    }
+
+    write := vk.WriteDescriptorSet {
+        sType = .WRITE_DESCRIPTOR_SET,
+        dstSet = heap_info.textures_rw,
+        dstBinding = 0,
+        dstArrayElement = start_idx,
+        descriptorCount = u32(len(textures)),
+        descriptorType = .STORAGE_IMAGE,
+        pImageInfo = raw_data(image_infos),
+    }
+    vk.UpdateDescriptorSets(ctx.device, 1, &write, 0, nil)
+}
+
+_desc_heap_set_samplers :: proc(heap: Descriptor_Heap, start_idx: u32, samplers: []Sampler_Desc, loc := #caller_location)
+{
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+    heap_info := pool_get(&ctx.desc_heaps, heap)
+
+    scratch, _ := acquire_scratch()
+    sampler_infos := make([]vk.DescriptorImageInfo, len(samplers), allocator = scratch)
+    for &info, i in sampler_infos
+    {
+        sampler_desc := samplers[i]
+        sampler_ci := vk.SamplerCreateInfo {
+            sType = .SAMPLER_CREATE_INFO,
+            magFilter = to_vk_filter(sampler_desc.mag_filter),
+            minFilter = to_vk_filter(sampler_desc.min_filter),
+            mipmapMode = to_vk_mipmap_filter(sampler_desc.mip_filter),
+            addressModeU = to_vk_address_mode(sampler_desc.address_mode_u),
+            addressModeV = to_vk_address_mode(sampler_desc.address_mode_v),
+            addressModeW = to_vk_address_mode(sampler_desc.address_mode_w),
+            mipLodBias = sampler_desc.mip_lod_bias,
+            minLod = sampler_desc.min_lod,
+            maxLod = sampler_desc.max_lod if sampler_desc.max_lod != 0.0 else vk.LOD_CLAMP_NONE,
+            anisotropyEnable = b32(sampler_desc.max_anisotropy > 1.0),
+            maxAnisotropy = sampler_desc.max_anisotropy,
+        }
+        sampler := get_or_add_sampler(sampler_ci)
+
+        info = {
+            sampler = sampler,
+            imageView = {},
+            imageLayout = {},
+        }
+    }
+
+    write := vk.WriteDescriptorSet {
+        sType = .WRITE_DESCRIPTOR_SET,
+        dstSet = heap_info.samplers,
+        dstBinding = 0,
+        dstArrayElement = start_idx,
+        descriptorCount = u32(len(samplers)),
+        descriptorType = .SAMPLER,
+        pImageInfo = raw_data(sampler_infos)
+    }
+    vk.UpdateDescriptorSets(ctx.device, 1, &write, 0, nil)
+}
+
+_desc_heap_set_bvhs :: proc(heap: Descriptor_Heap, start_idx: u32, bvhs: []BVH, loc := #caller_location)
+{
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+    heap_info := pool_get(&ctx.desc_heaps, heap)
+
+    scratch, _ := acquire_scratch()
+    vk_bvhs := make([]vk.AccelerationStructureKHR, len(bvhs), allocator = scratch)
+    for i in 0..<len(bvhs) {
+        vk_bvhs[i] = pool_get(&ctx.bvhs, bvhs[i]).handle
+    }
+
+    write_bvh := vk.WriteDescriptorSetAccelerationStructureKHR {
+        sType = .WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+        accelerationStructureCount = u32(len(bvhs)),
+        pAccelerationStructures = raw_data(vk_bvhs),
+    }
+    write := vk.WriteDescriptorSet {
+        sType = .WRITE_DESCRIPTOR_SET,
+        pNext = &write_bvh,
+        dstSet = heap_info.textures,
+        dstBinding = 0,
+        dstArrayElement = start_idx,
+        descriptorCount = u32(len(bvhs)),
+        descriptorType = .ACCELERATION_STRUCTURE_KHR,
+    }
+    vk.UpdateDescriptorSets(ctx.device, 1, &write, 0, nil)
+}
+
 _texture_view_descriptor_size :: proc() -> u32
 {
     return ctx.texture_desc_size
@@ -2392,6 +2672,18 @@ _cmd_set_desc_heap :: proc(cmd_buf: Command_Buffer, textures, textures_rw, sampl
         vk.CmdSetDescriptorBufferOffsetsEXT(vk_cmd_buf, .COMPUTE, ctx.common_pipeline_layout_compute, 3, 1, &cursor, &buffer_offsets[3])
         cursor += 1
     }
+}
+
+_cmd_set_desc_heap_2 :: proc(cmd_buf: Command_Buffer, heap: Descriptor_Heap, loc := #caller_location)
+{
+    if ctx.validation
+    {
+        ok := true
+        ok &= pool_check(&ctx.desc_heaps, heap, "heap", loc)
+        if !ok do return
+    }
+
+
 }
 
 _cmd_add_wait_semaphore :: proc(cmd_buf: Command_Buffer, sem: Semaphore, wait_value: u64, loc := #caller_location)

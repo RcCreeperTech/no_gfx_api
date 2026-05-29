@@ -23,6 +23,7 @@ Command_Buffer :: distinct Handle
 Semaphore :: distinct Handle
 Shader :: distinct Handle
 BVH :: struct { _: Handle }
+Descriptor_Heap :: distinct Handle
 Texture_Descriptor :: struct { bytes: [8]u64 }
 Sampler_Descriptor :: struct { bytes: [4]u64 }
 BVH_Descriptor :: struct { bytes: [4]u64 }
@@ -316,6 +317,14 @@ texture_view_descriptor_size: proc() -> u32 : _texture_view_descriptor_size
 texture_rw_view_descriptor_size: proc() -> u32 : _texture_rw_view_descriptor_size
 sampler_descriptor_size: proc() -> u32 : _sampler_descriptor_size
 
+// Descriptors
+desc_heap_create: proc(name := "", loc := #caller_location) -> Descriptor_Heap : _desc_heap_create
+desc_heap_destroy: proc(heap: Descriptor_Heap, loc := #caller_location) : _desc_heap_destroy
+desc_heap_set_textures: proc(heap: Descriptor_Heap, start_idx: u32, textures: []Texture, view: []Texture_View_Desc, loc := #caller_location) : _desc_heap_set_textures
+desc_heap_set_textures_rw: proc(heap: Descriptor_Heap, start_idx: u32, textures: []Texture, views: []Texture_View_Desc, loc := #caller_location) : _desc_heap_set_textures_rw
+desc_heap_set_samplers : proc(heap: Descriptor_Heap, start_idx: u32, samplers: []Sampler_Desc, loc := #caller_location) : _desc_heap_set_samplers
+desc_heap_set_bvhs: proc(heap: Descriptor_Heap, start_idx: u32, bvhs: []BVH, loc := #caller_location) : _desc_heap_set_bvhs
+
 // Shaders
 shader_create: proc(code: []u32, type: Shader_Type_Graphics, entry_point_name := "main", name := "", loc := #caller_location) -> Shader : _shader_create
 shader_create_compute: proc(code: []u32, group_size_x: u32, group_size_y: u32 = 1, group_size_z: u32 = 1, entry_point_name := "main", name := "", loc := #caller_location) -> Shader : _shader_create_compute
@@ -356,6 +365,7 @@ cmd_copy_to_texture: proc(cmd_buf: Command_Buffer, dst: Texture, src: gpuptr, re
 cmd_blit_texture: proc(cmd_buf: Command_Buffer, dst: Texture, dst_rect: Blit_Rect, src: Texture, src_rect: Blit_Rect, filter: Filter, loc := #caller_location) : _cmd_blit_texture
 
 cmd_set_desc_heap: proc(cmd_buf: Command_Buffer, textures, textures_rw, samplers, bvhs: gpuptr, loc := #caller_location) : _cmd_set_desc_heap
+cmd_set_desc_heap_2: proc(cmd_buf: Command_Buffer, heap: Descriptor_Heap, loc := #caller_location) : _cmd_set_desc_heap_2
 
 cmd_add_wait_semaphore: proc(cmd_buf: Command_Buffer, sem: Semaphore, wait_value: u64, loc := #caller_location) : _cmd_add_wait_semaphore
 cmd_add_signal_semaphore: proc(cmd_buf: Command_Buffer, sem: Semaphore, signal_value: u64, loc := #caller_location) : _cmd_add_signal_semaphore
