@@ -1472,7 +1472,6 @@ _texture_create :: proc(desc: Texture_Desc, storage: gpuptr, queue: Queue = .Mai
     vk_set_debug_name(name, u64(image), .IMAGE)
 
     tex_info := Texture_Info { handle = image, owns_image = true }
-    sync.guard(&ctx.lock)
     return Texture {
         dimensions = desc_clean.dimensions,
         format = desc_clean.format,
@@ -3652,7 +3651,6 @@ _vk_wrap_image :: proc(image: vk.Image, desc: Texture_Desc, name := "", loc := #
         owns_image = false,
     }
 
-    sync.guard(&ctx.lock)
     return Texture {
         dimensions = desc_clean.dimensions,
         format = desc_clean.format,
