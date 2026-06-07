@@ -504,6 +504,7 @@ _init :: proc(validation := true, loc := #caller_location) -> bool
             bufferDeviceAddress = true,
             drawIndirectCount = true,
             scalarBlockLayout = true,
+            shaderInt8 = true,
         }
         next = &vk.PhysicalDeviceVulkan11Features {
             sType = .PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -531,6 +532,7 @@ _init :: proc(validation := true, loc := #caller_location) -> bool
             pNext = next,
             features = {
                 shaderInt64 = true,
+                shaderInt16 = true,
                 vertexPipelineStoresAndAtomics = true,
                 samplerAnisotropy = true,
             }
