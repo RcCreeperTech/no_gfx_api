@@ -1680,7 +1680,7 @@ _desc_heap_create :: proc(texture_count: u32 = 65536,
         sType = .DESCRIPTOR_POOL_CREATE_INFO,
         flags = { .FREE_DESCRIPTOR_SET, .UPDATE_AFTER_BIND },
         maxSets = 4,
-        poolSizeCount = u32(len(pool_sizes)),
+        poolSizeCount = u32(len(ctx.desc_layouts)),
         pPoolSizes = raw_data(pool_sizes)
     }
     desc_pool: vk.DescriptorPool
